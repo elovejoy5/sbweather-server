@@ -23,6 +23,15 @@ resource "aws_s3_bucket" "sbweather-s3-bucket" {
   }
 }
 
+resource "aws_s3_bucket_cors_configuration" "sbweather-s3-bucket" {
+  bucket = aws_s3_bucket.sbweather-s3-bucket.id
+
+  cors_rule {
+    allowed_methods = ["GET"]
+    allowed_origins = ["*"]
+  }
+}
+
 data "archive_file" "sbweather-cache-forecast" {
   type        = "zip"
   source_file = "sbweather-cache-forecast.js"
