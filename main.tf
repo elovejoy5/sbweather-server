@@ -32,6 +32,19 @@ resource "aws_s3_bucket_cors_configuration" "sbweather-s3-bucket" {
   }
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "bucket-config" {
+  bucket = aws_s3_bucket.sbweather-s3-bucket.id
+
+  rule {
+    id     = "delete_old_files"
+    status = "Enabled"
+
+    expiration {
+      days = 60
+    }
+  }
+}
+
 data "archive_file" "sbweather-cache-forecast" {
   type        = "zip"
   source_file = "sbweather-cache-forecast.js"
@@ -100,15 +113,15 @@ resource "aws_iam_role_policy" "lambda" {
   })
 }
 
-resource "aws_cloudwatch_event_rule" "every_hour" {
-    name = "every_hour"
-    description = "Fires every hour"
-    schedule_expression = "rate(2 hours)"
+resource "aws_cloudwatch_event_rule" "every_few_hours" {
+    name = "every_few_hours"
+    description = "Fires every few hours"
+    schedule_expression = "rate(6 hours)"
 }
 
 resource "aws_cloudwatch_event_target" "check_foo_every_five_minutes" {
-    rule = aws_cloudwatch_event_rule.every_hour.name
-    target_id = "check_foo"
+    rule = aws_cloudwatch_event_rule.every_few_hours.name
+    target_id = "sbweather-cache-forecast-lambda"
     arn = aws_lambda_function.sbweather-cache-forecast.arn
 }
 
@@ -117,5 +130,5 @@ resource "aws_lambda_permission" "allow_cloudwatch_to_call_check_foo" {
     action = "lambda:InvokeFunction"
     function_name = aws_lambda_function.sbweather-cache-forecast.function_name
     principal = "events.amazonaws.com"
-    source_arn = aws_cloudwatch_event_rule.every_hour.arn
+    source_arn = aws_cloudwatch_event_rule.every_few_hours.arn
 }

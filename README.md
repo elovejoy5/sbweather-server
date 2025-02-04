@@ -28,3 +28,11 @@ Dependencies:
 
 - Terraform installed on your local so that you can run terraform commands
 - AWS permissions set up on your local, for example by setting values of AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars
+
+## Notes
+
+Execute lambda via CLI:
+
+```
+aws lambda invoke --function-name sbweather-cache-forecast /dev/stdout
+```
