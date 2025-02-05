@@ -77,6 +77,11 @@ data "archive_file" "sbweather-cache-forecast" {
   output_path = "tmp/sbweather-cache-forecast.zip"
 }
 
+resource "aws_cloudwatch_log_group" "lambda_logs" {
+  name              = "/aws/lambda/sbweather-cache-forecast"
+  retention_in_days = 7
+}
+
 resource "aws_lambda_function" "sbweather-cache-forecast" {
   filename      = data.archive_file.sbweather-cache-forecast.output_path
   function_name = "sbweather-cache-forecast"
@@ -145,22 +150,54 @@ resource "aws_iam_role_policy" "lambda" {
   })
 }
 
-resource "aws_cloudwatch_event_rule" "every_few_hours" {
-    name = "every_few_hours"
-    description = "Fires every few hours"
-    schedule_expression = "rate(6 hours)"
-}
+resource "aws_scheduler_schedule" "every_few_hours" {
+  name = "every_few_hours"
+  description = "Fires every few hours"
+  
+  flexible_time_window {
+    mode = "OFF"
+  }
 
-resource "aws_cloudwatch_event_target" "check_foo_every_five_minutes" {
-    rule = aws_cloudwatch_event_rule.every_few_hours.name
-    target_id = "sbweather-cache-forecast-lambda"
+  schedule_expression = "rate(6 hours)"
+  
+  target {
     arn = aws_lambda_function.sbweather-cache-forecast.arn
+    role_arn = aws_iam_role.scheduler_role.arn
+  }
 }
 
-resource "aws_lambda_permission" "allow_cloudwatch_to_call_check_foo" {
-    statement_id = "AllowExecutionFromCloudWatch"
-    action = "lambda:InvokeFunction"
-    function_name = aws_lambda_function.sbweather-cache-forecast.function_name
-    principal = "events.amazonaws.com"
-    source_arn = aws_cloudwatch_event_rule.every_few_hours.arn
+resource "aws_iam_role" "scheduler_role" {
+  name = "scheduler-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "scheduler.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "scheduler_policy" {
+  name = "scheduler-policy"
+  role = aws_iam_role.scheduler_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = [
+          aws_lambda_function.sbweather-cache-forecast.arn
+        ]
+      }
+    ]
+  })
 }
