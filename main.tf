@@ -23,7 +23,33 @@ resource "aws_s3_bucket" "sbweather-s3-bucket" {
   }
 }
 
+resource "aws_s3_bucket_ownership_controls" "sbweather-s3-bucket" {
+  bucket = aws_s3_bucket.sbweather-s3-bucket.id
+  rule {
+    object_ownership = "ObjectWriter"
+  }
+}
+
+resource "aws_s3_bucket_acl" "sbweather-s3-bucket" {
+  depends_on = [aws_s3_bucket_ownership_controls.sbweather-s3-bucket]
+  bucket = aws_s3_bucket.sbweather-s3-bucket.id
+  acl    = "private"
+}
+
+resource "aws_s3_bucket_public_access_block" "sbweather-s3-bucket" {
+  bucket = aws_s3_bucket.sbweather-s3-bucket.id
+
+  block_public_acls       = false  # Allow public ACLs
+  block_public_policy     = false  # Allow public bucket policies
+  ignore_public_acls      = false  # Don't ignore public ACLs
+  restrict_public_buckets = false  # Don't restrict public access
+}
+
 resource "aws_s3_bucket_cors_configuration" "sbweather-s3-bucket" {
+  depends_on = [
+    aws_s3_bucket_ownership_controls.sbweather-s3-bucket,
+    aws_s3_bucket_public_access_block.sbweather-s3-bucket
+  ]
   bucket = aws_s3_bucket.sbweather-s3-bucket.id
 
   cors_rule {
@@ -103,12 +129,18 @@ resource "aws_iam_role_policy" "lambda" {
         Resource = "*"
       },
       {
-        "Effect": "Allow",
-        "Action": [
-            "s3:*"
+        Effect = "Allow",
+        Action = [
+          "s3:PutObject",
+          "s3:PutObjectAcl",
+          "s3:GetObject",
+          "s3:ListBucket"
         ],
-        "Resource": "arn:aws:s3:::*"
-    }
+        Resource = [
+          "${aws_s3_bucket.sbweather-s3-bucket.arn}",
+          "${aws_s3_bucket.sbweather-s3-bucket.arn}/*"
+        ]
+      }
     ]
   })
 }
