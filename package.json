@@ -1,0 +1,7 @@
+{
+  "name": "sbweather-server",
+  "packageManager": "yarn@4.6.0",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.744.0"
+  }
+}

@@ -23,7 +23,33 @@ resource "aws_s3_bucket" "sbweather-s3-bucket" {
   }
 }
 
+resource "aws_s3_bucket_ownership_controls" "sbweather-s3-bucket" {
+  bucket = aws_s3_bucket.sbweather-s3-bucket.id
+  rule {
+    object_ownership = "ObjectWriter"
+  }
+}
+
+resource "aws_s3_bucket_acl" "sbweather-s3-bucket" {
+  depends_on = [aws_s3_bucket_ownership_controls.sbweather-s3-bucket]
+  bucket = aws_s3_bucket.sbweather-s3-bucket.id
+  acl    = "private"
+}
+
+resource "aws_s3_bucket_public_access_block" "sbweather-s3-bucket" {
+  bucket = aws_s3_bucket.sbweather-s3-bucket.id
+
+  block_public_acls       = false  # Allow public ACLs
+  block_public_policy     = false  # Allow public bucket policies
+  ignore_public_acls      = false  # Don't ignore public ACLs
+  restrict_public_buckets = false  # Don't restrict public access
+}
+
 resource "aws_s3_bucket_cors_configuration" "sbweather-s3-bucket" {
+  depends_on = [
+    aws_s3_bucket_ownership_controls.sbweather-s3-bucket,
+    aws_s3_bucket_public_access_block.sbweather-s3-bucket
+  ]
   bucket = aws_s3_bucket.sbweather-s3-bucket.id
 
   cors_rule {
@@ -32,10 +58,28 @@ resource "aws_s3_bucket_cors_configuration" "sbweather-s3-bucket" {
   }
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "bucket-config" {
+  bucket = aws_s3_bucket.sbweather-s3-bucket.id
+
+  rule {
+    id     = "delete_old_files"
+    status = "Enabled"
+
+    expiration {
+      days = 60
+    }
+  }
+}
+
 data "archive_file" "sbweather-cache-forecast" {
   type        = "zip"
   source_file = "sbweather-cache-forecast.js"
   output_path = "tmp/sbweather-cache-forecast.zip"
+}
+
+resource "aws_cloudwatch_log_group" "lambda_logs" {
+  name              = "/aws/lambda/sbweather-cache-forecast"
+  retention_in_days = 7
 }
 
 resource "aws_lambda_function" "sbweather-cache-forecast" {
@@ -90,32 +134,70 @@ resource "aws_iam_role_policy" "lambda" {
         Resource = "*"
       },
       {
-        "Effect": "Allow",
-        "Action": [
-            "s3:*"
+        Effect = "Allow",
+        Action = [
+          "s3:PutObject",
+          "s3:PutObjectAcl",
+          "s3:GetObject",
+          "s3:ListBucket"
         ],
-        "Resource": "arn:aws:s3:::*"
-    }
+        Resource = [
+          "${aws_s3_bucket.sbweather-s3-bucket.arn}",
+          "${aws_s3_bucket.sbweather-s3-bucket.arn}/*"
+        ]
+      }
     ]
   })
 }
 
-resource "aws_cloudwatch_event_rule" "every_hour" {
-    name = "every_hour"
-    description = "Fires every hour"
-    schedule_expression = "rate(2 hours)"
-}
+resource "aws_scheduler_schedule" "every_few_hours" {
+  name = "every_few_hours"
+  description = "Fires every few hours"
+  
+  flexible_time_window {
+    mode = "OFF"
+  }
 
-resource "aws_cloudwatch_event_target" "check_foo_every_five_minutes" {
-    rule = aws_cloudwatch_event_rule.every_hour.name
-    target_id = "check_foo"
+  schedule_expression = "rate(6 hours)"
+  
+  target {
     arn = aws_lambda_function.sbweather-cache-forecast.arn
+    role_arn = aws_iam_role.scheduler_role.arn
+  }
 }
 
-resource "aws_lambda_permission" "allow_cloudwatch_to_call_check_foo" {
-    statement_id = "AllowExecutionFromCloudWatch"
-    action = "lambda:InvokeFunction"
-    function_name = aws_lambda_function.sbweather-cache-forecast.function_name
-    principal = "events.amazonaws.com"
-    source_arn = aws_cloudwatch_event_rule.every_hour.arn
+resource "aws_iam_role" "scheduler_role" {
+  name = "scheduler-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "scheduler.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "scheduler_policy" {
+  name = "scheduler-policy"
+  role = aws_iam_role.scheduler_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = [
+          aws_lambda_function.sbweather-cache-forecast.arn
+        ]
+      }
+    ]
+  })
 }

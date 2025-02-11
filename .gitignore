@@ -1,3 +1,19 @@
+.yarn/*
+!.yarn/cache
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Swap the comments on the following lines if you wish to use zero-installs
+# Documentation here: https://yarnpkg.com/features/zero-installs
+#!.yarn/cache
+.pnp.*
+
+# Node
+node_modules/
+
 # Local .terraform directories
 **/.terraform/*
 
