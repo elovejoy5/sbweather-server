@@ -2,19 +2,24 @@ const https = require("node:https");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const client = new S3Client();
 
+// Add file type constants at the top level
+const FileType = {
+  WEATHER_FORECAST: "weatherForecast",
+  TIDE_PREDICTION: "tidePrediction",
+};
+
 const handler = async () => {
   // Step 1: Get weather forecast
   const { status, data } = await getWeatherForecast();
   if (status === 200 && data) {
     console.log("getForecast was successful, creating cache file now");
-    await createS3File(data);
+    await createS3File(data, FileType.WEATHER_FORECAST);
   }
 
   // Step 2: Get tide predictions after successful forecast
   const { status: tideStatus, data: tideData } = await getTidePredictions();
   if (tideStatus === 200 && tideData) {
-    console.log("getTidePredictions was successful, creating tide cache file");
-    await createS3File(tideData, "tides-");
+    await createS3File(tideData, FileType.TIDE_PREDICTION);
   }
 };
 
@@ -22,19 +27,35 @@ module.exports = {
   handler,
 };
 
-const createS3File = async (data, prefix = "") => {
+const createS3File = async (data, fileType = FileType.WEATHER_FORECAST) => {
   const Bucket = "sbweather-s3-bucket";
-  const Key = prefix + new Date().toISOString().substring(0, 10) + ".json";
-  console.log(`sbweather-cache-forecast trying to create ${Key} in ${Bucket}`);
+  const today = new Date();
 
-  // see https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/command/PutObjectCommand/
+  let Key;
+  if (fileType === FileType.TIDE_PREDICTION) {
+    // YYYY-MM-tides.json, e.g. 2025-02-tides.json
+    Key = today.toISOString().substring(0, 7) + "-tides.json";
+  } else {
+    // YYYY-MM-DD.json format for weather forecasts
+    Key = today.toISOString().substring(0, 10) + ".json";
+  }
+
   const Body = JSON.stringify(data);
   const ACL = "public-read";
 
   const input = { Body, Bucket, Key, ACL };
   const command = new PutObjectCommand(input);
   const response = await client.send(command);
-  // console.log(response);
+  if (
+    response &&
+    response["$metadata"] &&
+    response["$metadata"].httpStatusCode === 200
+  ) {
+    console.log(`File ${Key} created in S3:${Bucket}`);
+  } else {
+    console.log("response: ", JSON.stringify(response, null, 2));
+    throw new Error("Failed to create file in S3");
+  }
 };
 
 const getTidePredictions = async () => {
