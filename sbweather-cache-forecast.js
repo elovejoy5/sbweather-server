@@ -1,5 +1,9 @@
 const https = require("node:https");
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const {
+  S3Client,
+  PutObjectCommand,
+  HeadObjectCommand,
+} = require("@aws-sdk/client-s3");
 const client = new S3Client();
 
 // Add file type constants at the top level
@@ -9,17 +13,29 @@ const FileType = {
 };
 
 const handler = async () => {
-  // Step 1: Get weather forecast
-  const { status, data } = await getWeatherForecast();
-  if (status === 200 && data) {
-    console.log("getForecast was successful, creating cache file now");
-    await createS3File(data, FileType.WEATHER_FORECAST);
-  }
+  try {
+    // Step 1: Get weather forecast
+    const { status, data } = await getWeatherForecast();
+    if (status === 200 && data) {
+      console.log("getForecast was successful, creating cache file now");
+      await createS3File(data, FileType.WEATHER_FORECAST);
+    }
 
-  // Step 2: Get tide predictions after successful forecast
-  const { status: tideStatus, data: tideData } = await getTidePredictions();
-  if (tideStatus === 200 && tideData) {
-    await createS3File(tideData, FileType.TIDE_PREDICTION);
+    // Step 2: Get tide predictions after successful forecast, if needed
+    const tidesAlreadyCached = await checkIfTidesAreCached();
+    if (!tidesAlreadyCached) {
+      const { status: tideStatus, data: tideData } = await getTidePredictions();
+      if (tideStatus === 200 && tideData) {
+        await createS3File(tideData, FileType.TIDE_PREDICTION);
+      }
+    } else {
+      console.log(
+        "Skipping tide prediction fetch - cache exists for current month"
+      );
+    }
+  } catch (error) {
+    console.error("Error during execution:", error);
+    throw error;
   }
 };
 
@@ -132,4 +148,32 @@ const getWeatherForecast = async () => {
       });
   });
   return getPromise;
+};
+
+const checkIfTidesAreCached = async () => {
+  const Bucket = "sbweather-s3-bucket";
+  const today = new Date();
+  const Key = today.toISOString().substring(0, 7) + "-tides.json";
+
+  try {
+    const command = new HeadObjectCommand({
+      Bucket,
+      Key,
+    });
+
+    const response = await client.send(command);
+    if (response && response["$metadata"].httpStatusCode === 200) {
+      console.log(`Tide cache exists for ${Key}`);
+      return true;
+    }
+  } catch (error) {
+    if (error.name === "NotFound") {
+      console.log(`No tide cache found for ${Key}`);
+      return false;
+    }
+    console.error("Error checking tide cache:", error);
+    throw error;
+  }
+
+  return false;
 };

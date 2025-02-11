@@ -2,9 +2,9 @@
 
 `sbweather-server` sets up:
 
-- An S3 bucket where JSON forecasts from NWS can be cached
+- An S3 bucket where JSON forecasts and tide predictions from NWS can be cached
 - A lambda function that can download forecast and post it to S3, along with cloudwatch event to invoke it periodically
-- Role and policy to enable the above
+- Roles, policies, and a cloudwatch event to enable the above
 
 ## Dependencies
 
@@ -24,6 +24,10 @@ node local-run.js
 Execute lambda via CLI:
 
 ```
+# Invoke the lambda function && tail logs:
+aws lambda invoke --function-name sbweather-cache-forecast --log-type Tail --query 'LogResult' --output text /dev/stdout | base64 -d
+
+# Invoke function and view output:
 aws lambda invoke --function-name sbweather-cache-forecast /dev/stdout
 ```
 
